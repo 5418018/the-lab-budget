@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1e3a8a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>THE 연구소 5기 회계 및 실시간 예산 현황</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- PapaParse for Google Sheets CSV sync -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 pb-20">
+
+  <!-- Sticky Top Header -->
+  <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 py-3 shadow-sm">
+    <div class="max-w-md mx-auto flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
+          5기
+        </div>
+        <div>
+          <h1 class="text-base font-bold text-slate-900 leading-tight">THE 연구소 회계장부</h1>
+          <div class="flex items-center space-x-1.5 text-xs text-slate-500">
+            <span id="syncStatusDot" class="w-2 h-2 rounded-full bg-emerald-500 badge-pulse inline-block"></span>
+            <span id="syncStatusText">실시간 동기화됨</span>
+            <span class="text-slate-300">·</span>
+            <span id="lastUpdatedTime">09-04 기준</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <button id="refreshBtn" onclick="handleRefresh()" title="새로고침" class="p-2 rounded-full hover:bg-slate-100 active:scale-95 text-slate-600 transition">
+          <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+        </button>
+        <button onclick="openSettingsModal()" title="구글시트 연동 설정" class="p-2 rounded-full hover:bg-slate-100 active:scale-95 text-slate-600 transition">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container (Mobile Max Width: max-w-md) -->
+  <main class="max-w-md mx-auto px-4 pt-4 space-y-4">
+
+    <!-- Hero KPI Gradient Card -->
+    <div class="hero-gradient text-white rounded-2xl p-5 shadow-lg relative overflow-hidden">
+      <!-- Background subtle pattern -->
+      <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
+
+      <div class="flex justify-between items-start mb-2">
+        <span class="text-xs font-medium text-blue-100 uppercase tracking-wider">현재 통장 잔액</span>
+        <span class="text-[11px] bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded-full font-medium text-blue-50">
+          2026 회계연도
+        </span>
+      </div>
+
+      <div class="text-3xl font-extrabold tracking-tight mb-4 flex items-baseline">
+        <span class="text-2xl font-bold mr-1">₩</span>
+        <span id="kpiBalance">31,471,771</span>
+      </div>
+
+      <!-- Progress Section -->
+      <div class="space-y-1.5 bg-black/15 p-3 rounded-xl backdrop-blur-sm">
+        <div class="flex justify-between text-xs">
+          <span class="text-blue-100">공식 예산 집행률</span>
+          <span id="kpiBurnRate" class="font-bold text-white">16.6%</span>
+        </div>
+        <div class="w-full bg-white/20 h-2 rounded-full overflow-hidden">
+          <div id="kpiProgressBar" class="bg-emerald-400 h-full rounded-full progress-bar-fill" style="width: 16.6%;"></div>
+        </div>
+        <div class="flex justify-between text-[11px] text-blue-100 pt-0.5">
+          <span>집행: <strong id="kpiOfficialSpent" class="text-white">683.3만</strong></span>
+          <span>총예산: <strong id="kpiTotalBudget" class="text-white">4,121.8만</strong></span>
+        </div>
+      </div>
+
+      <!-- Sub Metrics Grid -->
+      <div class="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-white/15 text-xs">
+        <div>
+          <span class="text-blue-200 block text-[10px]">회계연도 경과율</span>
+          <span class="font-semibold text-white">약 67% <span class="text-emerald-300 text-[10px]">(건전)</span></span>
+        </div>
+        <div>
+          <span class="text-blue-200 block text-[10px]">가예산 별도집행</span>
+          <span id="kpiProvisionalSpent" class="font-semibold text-white">2,913,740원</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Smart Budget Alert Banner -->
+    <div id="alertBanner" class="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start space-x-2.5 shadow-sm">
+      <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5"></i>
+      <div class="text-xs">
+        <strong class="font-semibold text-amber-900 block mb-0.5">예산 소진 주의 항목</strong>
+        <p class="text-amber-800 leading-relaxed">
+          <strong>의장단활동비</strong>가 예산 360만원 중 <span class="font-bold text-amber-900">74.9%(269.6만원)</span> 소진되었습니다. (잔여: 903,920원)
+        </p>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="flex border-b border-slate-200 bg-white rounded-xl p-1 shadow-sm sticky top-16 z-30">
+      <button onclick="switchTab('budget')" id="tabBtn-budget" class="tab-btn active flex-1 py-2 text-center text-xs font-semibold rounded-lg transition">
+        📊 예산 현황
+      </button>
+      <button onclick="switchTab('ledger')" id="tabBtn-ledger" class="tab-btn flex-1 py-2 text-center text-xs font-semibold text-slate-500 rounded-lg transition">
+        📜 수입지출 장부
+      </button>
+      <button onclick="switchTab('analytics')" id="tabBtn-analytics" class="tab-btn flex-1 py-2 text-center text-xs font-semibold text-slate-500 rounded-lg transition">
+        📈 통계/추이
+      </button>
+      <button onclick="switchTab('members')" id="tabBtn-members" class="tab-btn flex-1 py-2 text-center text-xs font-semibold text-slate-500 rounded-lg transition">
+        👥 인원/회비
+      </button>
+    </nav>
+
+    <!-- ============================================================= -->
+    <!-- TAB 1: 예산 현황 (Budget Overview) -->
+    <!-- ============================================================= -->
+    <section id="tabContent-budget" class="space-y-4">
+      
+      <!-- 관별 예산 분포 도넛 차트 카드 -->
+      <div class="glass-card rounded-2xl p-4">
+        <h3 class="text-sm font-bold text-slate-900 mb-3 flex items-center justify-between">
+          <span>관별 예산 vs 지출 분포</span>
+          <span class="text-[11px] text-slate-500 font-normal">사업비/운영비/경조금</span>
+        </h3>
+        <div class="h-44 relative">
+          <canvas id="categoryChart"></canvas>
+        </div>
+      </div>
+
+      <!-- 19개 항목별 예산 집행 진행 리스트 -->
+      <div class="glass-card rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="text-sm font-bold text-slate-900">항목별 예산 집행률</h3>
+            <p class="text-[11px] text-slate-500">19개 공식 예산 항목 상세 현황</p>
+          </div>
+          <select id="budgetSortSelect" onchange="renderBudgetList()" class="text-xs bg-slate-100 border-none rounded-lg px-2 py-1 text-slate-700 font-medium focus:ring-1 focus:ring-blue-500">
+            <option value="rateDesc">집행률 높은 순</option>
+            <option value="budgetDesc">예산 큰 순</option>
+            <option value="spentDesc">지출 많은 순</option>
+            <option value="remDesc">잔액 많은 순</option>
+          </select>
+        </div>
+
+        <div id="budgetItemsList" class="space-y-3">
+          <!-- Dynamically Rendered by JS -->
+        </div>
+      </div>
+
+      <!-- 가예산 별도 설명 카드 -->
+      <div class="bg-blue-50 border border-blue-100 rounded-xl p-3.5 text-xs text-blue-900">
+        <span class="font-bold flex items-center space-x-1 mb-1 text-blue-800">
+          <i data-lucide="info" class="w-3.5 h-3.5"></i>
+          <span>가예산(조직활동비2 등) 안내</span>
+        </span>
+        <p class="text-blue-800/90 leading-relaxed text-[11px]">
+          공식 사업계획(목간)에 편성되지 않은 별도 집행액(2,913,740원)은 공식 집행률 계산에서 분리되어 관리됩니다.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- TAB 2: 수입지출 장부 (Ledger Feed) -->
+    <!-- ============================================================= -->
+    <section id="tabContent-ledger" class="space-y-3 hidden">
+      
+      <!-- Search & Filter Controls -->
+      <div class="glass-card rounded-2xl p-3.5 space-y-2.5">
+        <div class="relative">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+          <input 
+            type="text" 
+            id="ledgerSearchInput" 
+            oninput="handleLedgerSearch()" 
+            placeholder="지출내용, 집행자(김성복 등), 비고 검색..." 
+            class="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-100 rounded-xl border-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition"
+          />
+        </div>
+
+        <!-- Filter Chips (Horizontal Scrollable) -->
+        <div class="flex space-x-1.5 overflow-x-auto no-scrollbar pb-1 text-xs">
+          <button onclick="setLedgerFilter('ALL')" id="filterChip-ALL" class="filter-chip px-2.5 py-1 rounded-full bg-blue-600 text-white font-medium whitespace-nowrap text-[11px] transition">
+            전체 (140)
+          </button>
+          <button onclick="setLedgerFilter('EXPENSE')" id="filterChip-EXPENSE" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
+            지출만 (129)
+          </button>
+          <button onclick="setLedgerFilter('INCOME')" id="filterChip-INCOME" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
+            수입만 (11)
+          </button>
+          <button onclick="setLedgerFilter('의장단활동비')" id="filterChip-의장단활동비" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
+            의장단활동비
+          </button>
+          <button onclick="setLedgerFilter('조직활동비')" id="filterChip-조직활동비" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
+            조직활동비
+          </button>
+          <button onclick="setLedgerFilter('경조금')" id="filterChip-경조금" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
+            경조금
+          </button>
+        </div>
+      </div>
+
+      <!-- Transaction Count & Order info -->
+      <div class="flex justify-between items-center px-1 text-xs text-slate-500">
+        <span>조회 결과: <strong id="ledgerFilteredCount" class="text-slate-800">140</strong>건</span>
+        <span>최신순 정렬</span>
+      </div>
+
+      <!-- Ledger Transaction List -->
+      <div id="ledgerTransactionList" class="space-y-2">
+        <!-- Dynamically populated by JS -->
+      </div>
+
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- TAB 3: 통계 및 추이 (Analytics) -->
+    <!-- ============================================================= -->
+    <section id="tabContent-analytics" class="space-y-4 hidden">
+      
+      <!-- 월별 수입 vs 지출 비교 차트 -->
+      <div class="glass-card rounded-2xl p-4">
+        <h3 class="text-sm font-bold text-slate-900 mb-1">월별 수입 vs 지출 추이</h3>
+        <p class="text-[11px] text-slate-500 mb-3">2026년 2월 ~ 9월 실시간 흐름</p>
+        <div class="h-48 relative">
+          <canvas id="monthlyFlowChart"></canvas>
+        </div>
+      </div>
+
+      <!-- 통장 잔액 변화 추이 차트 -->
+      <div class="glass-card rounded-2xl p-4">
+        <h3 class="text-sm font-bold text-slate-900 mb-1">누적 통장 잔액 추이</h3>
+        <p class="text-[11px] text-slate-500 mb-3">이월금 2,303만원 유입 후 현재 3,147만원 유지</p>
+        <div class="h-44 relative">
+          <canvas id="balanceTrendChart"></canvas>
+        </div>
+      </div>
+
+      <!-- 주요 집행자 TOP 5 랭킹 -->
+      <div class="glass-card rounded-2xl p-4">
+        <h3 class="text-sm font-bold text-slate-900 mb-1">주요 집행(결제)자 랭킹</h3>
+        <p class="text-[11px] text-slate-500 mb-3">환급 및 법인카드 지출 집행 상위자</p>
+        <div id="payerRankList" class="space-y-2.5">
+          <!-- Dynamically filled -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- TAB 4: 인원 및 회비 (Members) -->
+    <!-- ============================================================= -->
+    <section id="tabContent-members" class="space-y-4 hidden">
+      
+      <!-- 인원 KPI 카드 -->
+      <div class="grid grid-cols-2 gap-3">
+        <div class="glass-card rounded-2xl p-4 text-center">
+          <span class="text-xs text-slate-500 font-medium block mb-1">현재 조직원 수</span>
+          <span class="text-2xl font-bold text-blue-600">46 <span class="text-sm font-normal text-slate-600">명</span></span>
+          <span class="text-[11px] text-emerald-600 block mt-1">+1명 증가 (안정 유지)</span>
+        </div>
+        <div class="glass-card rounded-2xl p-4 text-center">
+          <span class="text-xs text-slate-500 font-medium block mb-1">현재 후원회원 수</span>
+          <span class="text-2xl font-bold text-indigo-600">189 <span class="text-sm font-normal text-slate-600">명</span></span>
+          <span class="text-[11px] text-emerald-600 block mt-1">월 10,000원/5,000원</span>
+        </div>
+      </div>
+
+      <!-- 월별 인원 및 회비 테이블 -->
+      <div class="glass-card rounded-2xl p-4">
+        <h3 class="text-sm font-bold text-slate-900 mb-2">월별 회비 입금 및 인원 추이</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="text-[11px] text-slate-400 border-b border-slate-100">
+              <tr>
+                <th class="py-2">월</th>
+                <th class="py-2 text-center">조직원</th>
+                <th class="py-2 text-center">후원회원</th>
+                <th class="py-2 text-right">합계 입금액</th>
+              </tr>
+            </thead>
+            <tbody id="memberTableBody" class="divide-y divide-slate-100 text-slate-700">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 회원 변동 히스토리 타임라인 -->
+      <div class="glass-card rounded-2xl p-4">
+        <h3 class="text-sm font-bold text-slate-900 mb-3">회원 변동 히스토리 노트</h3>
+        <div id="memberNotesList" class="space-y-2.5 text-xs text-slate-600">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Google Sheets Settings Modal -->
+  <div id="settingsModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="text-base font-bold text-slate-900 flex items-center space-x-1.5">
+          <i data-lucide="sheet" class="w-5 h-5 text-emerald-600"></i>
+          <span>구글 스프레드시트 연동</span>
+        </h3>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-2 text-xs text-slate-600">
+        <p>
+          구글 스프레드시트 메뉴에서 <br>
+          <strong class="text-slate-800">[파일] → [공유] → [웹에 게시]</strong>를 누르고, 
+          <strong>CSV 형식</strong>으로 게시한 후 해당 링크를 아래에 입력하세요.
+        </p>
+        <input 
+          type="url" 
+          id="googleSheetUrlInput" 
+          placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" 
+          class="w-full p-2.5 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+        />
+      </div>
+
+      <div class="flex space-x-2 pt-2">
+        <button onclick="saveGoogleSheetUrl()" class="flex-1 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold py-2 rounded-xl text-xs transition">
+          저장 및 실시간 동기화
+        </button>
+        <button onclick="resetToInitialData()" class="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 rounded-xl text-xs transition">
+          초기화
+        </button>
+      </div>
+      
+      <p id="settingsMsg" class="text-[11px] text-center text-slate-500"></p>
+    </div>
+  </div>
+
+  <!-- Transaction Detail Modal -->
+  <div id="txModal" class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-100 pb-3">
+        <div>
+          <span id="modalTxTypeBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full">지출</span>
+          <span id="modalTxDate" class="text-xs text-slate-400 ml-1">2026-03-13</span>
+        </div>
+        <button onclick="closeTxModal()" class="text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="text-center py-2">
+        <span class="text-xs text-slate-500 block mb-1" id="modalTxItem">의장단활동비</span>
+        <div class="text-2xl font-extrabold text-slate-900" id="modalTxAmount">₩ 100,000</div>
+      </div>
+
+      <div class="space-y-2 text-xs bg-slate-50 p-3 rounded-xl">
+        <div class="flex justify-between">
+          <span class="text-slate-400">적요/내용</span>
+          <span class="font-medium text-slate-800 text-right max-w-[200px]" id="modalTxDesc">-</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">지출자/수취인</span>
+          <span class="font-medium text-slate-800" id="modalTxPayer">-</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">은행</span>
+          <span class="font-medium text-slate-800" id="modalTxBank">-</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-slate-400">거래 후 잔액</span>
+          <span class="font-semibold text-blue-600" id="modalTxBalance">-</span>
+        </div>
+      </div>
+
+      <button onclick="closeTxModal()" class="w-full bg-slate-900 text-white font-semibold py-2.5 rounded-xl text-xs">
+        닫기
+      </button>
+    </div>
+  </div>
+
+  <!-- Load Initial Data Script -->
+  <script src="data.js"></script>
+  <!-- Main Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
