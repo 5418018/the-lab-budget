@@ -25,7 +25,13 @@ def last_excel_commit(path):
     return int(result.stdout.strip() or 0)
 
 
-target_file = max(excel_files, key=last_excel_commit)
+# git 커밋 기록이 없거나(아직 커밋 안 한 최신 수정본) 여러 개가 0으로 동률일 때를 대비해
+# 파일 자체의 수정시각(mtime)도 함께 비교 기준으로 사용합니다.
+def sort_key(path):
+    return (last_excel_commit(path), os.path.getmtime(path))
+
+
+target_file = max(excel_files, key=sort_key)
 print(f'변환 대상 파일: {os.path.basename(target_file)}')
 
 wb = openpyxl.load_workbook(target_file, data_only=True)
@@ -52,12 +58,43 @@ for r in range(11, 30):
 
 # 2. 3. 5기 수입지출장부
 ws_ledger = wb['3. 5기 수입지출장부']
+
+# --- 변경된 부분 시작 ---
+# 엑셀 "표(Table)" 범위는 데이터를 표 밖에 입력하면 자동으로 확장되지 않아
+# 최신 행이 누락될 수 있습니다. 표가 있으면 시작 행(헤더 다음 행)만 표에서 가져오고,
+# 끝 행은 시트에 실제로 값이 있는 곳까지 직접 스캔합니다.
 ledger_table = ws_ledger.tables.get('Table_1')
 if ledger_table:
-    _min_col, header_row, _max_col, last_row = range_boundaries(ledger_table.ref)
+    _min_col, header_row, _max_col, table_last_row = range_boundaries(ledger_table.ref)
     first_row = header_row + 1
 else:
-    first_row, last_row = 5, ws_ledger.max_row
+    first_row = 5
+    table_last_row = None
+
+# 실제 마지막 데이터 행을 A~K열 기준으로 직접 탐색 (표 범위와 무관하게)
+actual_last_row = first_row - 1
+empty_streak = 0
+MAX_EMPTY_STREAK = 20  # 연속으로 이 값만큼 빈 행이 나오면 데이터 끝으로 간주
+scan_end = max(ws_ledger.max_row, table_last_row or 0)
+for r in range(first_row, scan_end + 1):
+    row_values = [ws_ledger.cell(row=r, column=c).value for c in range(1, 12)]
+    if any(v not in (None, '') for v in row_values):
+        actual_last_row = r
+        empty_streak = 0
+    else:
+        empty_streak += 1
+        if empty_streak >= MAX_EMPTY_STREAK:
+            break
+
+last_row = actual_last_row
+
+if table_last_row is not None and last_row > table_last_row:
+    print(
+        f'[경고] 엑셀 표(Table_1) 범위({table_last_row}행)보다 실제 데이터가 더 있습니다 '
+        f'({last_row}행까지). 엑셀에서 표 범위를 확장해 주세요. '
+        f'(스크립트는 실제 데이터 끝까지 반영했습니다.)'
+    )
+# --- 변경된 부분 끝 ---
 
 transactions = []
 for r in range(first_row, last_row + 1):
@@ -150,3 +187,4 @@ with open(out_json, 'w', encoding='utf-8') as f:
     json.dump(dataset, f, ensure_ascii=False, indent=2)
 
 print(f'업데이트 완료: {out_js}, {out_json}')
+print(f'총 거래 건수: {len(transactions)}건, 마지막 행: {last_row}')
