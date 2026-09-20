@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime
 
@@ -16,7 +17,15 @@ if not excel_files:
     print('엑셀 파일을 찾을 수 없습니다. 기존 data.js를 유지합니다.')
     sys.exit(0)
 
-target_file = max(excel_files, key=os.path.getmtime)
+def last_excel_commit(path):
+    result = subprocess.run(
+        ['git', 'log', '-1', '--format=%ct', '--', os.path.basename(path)],
+        cwd=base_dir, capture_output=True, text=True, check=True,
+    )
+    return int(result.stdout.strip() or 0)
+
+
+target_file = max(excel_files, key=last_excel_commit)
 print(f'변환 대상 파일: {os.path.basename(target_file)}')
 
 wb = openpyxl.load_workbook(target_file, data_only=True)
