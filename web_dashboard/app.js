@@ -268,7 +268,12 @@ function renderLedgerList() {
   const container = document.getElementById('ledgerTransactionList');
   if (!container) return;
 
-  let txs = [...state.data.transactions];
+  const transactions = state.data.transactions;
+  document.getElementById('filterChip-ALL').textContent = `전체 (${transactions.length})`;
+  document.getElementById('filterChip-EXPENSE').textContent = `지출만 (${transactions.filter(t => t.expense > 0).length})`;
+  document.getElementById('filterChip-INCOME').textContent = `수입만 (${transactions.filter(t => t.income > 0).length})`;
+
+  let txs = [...transactions];
 
   // 최신 거래가 위로 오도록 역순 정렬
   txs.reverse();
@@ -541,7 +546,11 @@ async function syncGoogleSheetData(csvUrl) {
       header: false,
       skipEmptyLines: true,
       complete: (results) => {
-        parseGoogleSheetsCSV(results.data);
+        if (!parseGoogleSheetsCSV(results.data)) {
+          dot.className = 'w-2 h-2 rounded-full bg-blue-500 inline-block';
+          text.innerText = '최신 장부 유지';
+          return;
+        }
         dot.className = 'w-2 h-2 rounded-full bg-emerald-500 badge-pulse inline-block';
         text.innerText = '실시간 동기화됨';
         const now = new Date();
@@ -566,7 +575,8 @@ function parseGoogleSheetsCSV(rows) {
   
   rows.forEach((row, idx) => {
     // 5행 이후부터 데이터 행으로 판별
-    const d = row[0];
+    const parts = String(row[0] || '').trim().match(/^(\d{4})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})(?!\d)/);
+    const date = parts && [parts[1], parts[2].padStart(2, '0'), parts[3].padStart(2, '0')].join('-');
     const cat = row[1];
     const item = row[2];
     const inc = parseFloat(String(row[3]).replace(/,/g, '')) || 0;
@@ -576,11 +586,11 @@ function parseGoogleSheetsCSV(rows) {
     const payer = row[9];
     const bank = row[10];
 
-    if ((inc > 0 || exp > 0) && (d || cat)) {
+    if ((inc > 0 || exp > 0) && date) {
       if (b > 0) bal = b;
       newTxs.push({
         id: idx,
-        date: String(d).slice(0, 10),
+        date,
         category: cat || '',
         item: item || '',
         income: inc,
@@ -593,13 +603,21 @@ function parseGoogleSheetsCSV(rows) {
     }
   });
 
-  if (newTxs.length > 0) {
+  const currentTxs = state.data.transactions;
+  const latestDate = txs => txs.reduce((latest, tx) => tx.date > latest ? tx.date : latest, '');
+  const sheetDate = latestDate(newTxs);
+  const currentDate = latestDate(currentTxs);
+  const useSheet = Boolean(sheetDate) && (sheetDate > currentDate ||
+    (sheetDate === currentDate && newTxs.length >= currentTxs.length));
+
+  if (useSheet) {
     state.data.transactions = newTxs;
     // 잔액 갱신
     state.data.kpi.balance = newTxs[newTxs.length - 1].balance || state.data.kpi.balance;
   }
 
   initDashboard();
+  return useSheet;
 }
 
 // =============================================================================

@@ -194,13 +194,13 @@
         <!-- Filter Chips (Horizontal Scrollable) -->
         <div class="flex space-x-1.5 overflow-x-auto no-scrollbar pb-1 text-xs">
           <button onclick="setLedgerFilter('ALL')" id="filterChip-ALL" class="filter-chip px-2.5 py-1 rounded-full bg-blue-600 text-white font-medium whitespace-nowrap text-[11px] transition">
-            전체 (140)
+            전체
           </button>
           <button onclick="setLedgerFilter('EXPENSE')" id="filterChip-EXPENSE" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
-            지출만 (129)
+            지출만
           </button>
           <button onclick="setLedgerFilter('INCOME')" id="filterChip-INCOME" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
-            수입만 (11)
+            수입만
           </button>
           <button onclick="setLedgerFilter('의장단활동비')" id="filterChip-의장단활동비" class="filter-chip px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium whitespace-nowrap text-[11px] transition">
             의장단활동비
@@ -216,7 +216,7 @@
 
       <!-- Transaction Count & Order info -->
       <div class="flex justify-between items-center px-1 text-xs text-slate-500">
-        <span>조회 결과: <strong id="ledgerFilteredCount" class="text-slate-800">140</strong>건</span>
+        <span>조회 결과: <strong id="ledgerFilteredCount" class="text-slate-800">0</strong>건</span>
         <span>최신순 정렬</span>
       </div>
 
@@ -398,6 +398,6 @@
   <!-- Load Initial Data Script -->
   <script src="data.js"></script>
   <!-- Main Application Logic -->
-  <script src="app.js"></script>
+  <script src="app.js?v=20261107"></script>
 </body>
 </html>
